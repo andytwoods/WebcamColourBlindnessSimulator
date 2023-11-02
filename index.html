@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Production-ready green screen in the browser</title>
+</head>
+<body>
+
+<div id="content">
+    <h1>Colour blindness simulator</h1>
+    <p>Shader in browser via https://jameshfisher.com/2020/08/11/production-ready-green-screen-in-the-browser/</p>
+    <p>Colourblindness shader from https://gist.github.com/jcdickinson/580b7fb5cc145cee8740</p>
+    <p>
+        <video id="webcamVideo" style="display: none;"></video>
+        <canvas id="display"
+                style="background-size: cover;  max-width: 100%; max-height:400px;"></canvas>
+    </p>
+
+    <button onclick="startWebcam(); this.parentElement.removeChild(this)">Start webcam</button>
+    <div>
+        <h4>Colour blindness type</h4>
+    <input type="radio" name="colour_blindness_type" checked='checked' value="1">Protanope - reds are greatly reduced (1% men)<br>
+    <input type="radio" name="colour_blindness_type" value="2">Deuteranope - greens are greatly reduced (1% men)<br>
+    <input type="radio" name="colour_blindness_type" value="3">Tritanope - blues are greatly reduced (0.003% population)<br>
+    </div>
+
+    <script id="fragment-shader" type="glsl">
+  precision mediump float;
+
+  uniform sampler2D tex;
+  uniform float texWidth;
+  uniform float texHeight;
+  uniform float colour_blindness_type;
+
+  uniform vec3 keyColor;
+  uniform float similarity;
+  uniform float smoothness;
+  uniform float spill;
+
+  // From https://github.com/libretro/glsl-shaders/blob/master/nnedi3/shaders/rgb-to-yuv.glsl
+  vec2 RGBtoUV(vec3 rgb) {
+    return vec2(
+      rgb.r * -0.169 + rgb.g * -0.331 + rgb.b *  0.5    + 0.5,
+      rgb.r *  0.5   + rgb.g * -0.419 + rgb.b * -0.081  + 0.5
+    );
+  }
+
+
+  void main(void) {
+    vec2 texCoord = vec2(gl_FragCoord.x/texWidth, 1.0 - (gl_FragCoord.y/texHeight));
+
+    vec4 rgba = texture2D(tex, texCoord);
+    float chromaDist = distance(RGBtoUV(texture2D(tex, texCoord).rgb), RGBtoUV(keyColor));
+
+    float baseMask = chromaDist - similarity;
+    float fullMask = pow(clamp(baseMask / smoothness, 0., 1.), 1.5);
+    rgba.a = fullMask;
+
+    float spillVal = pow(clamp(baseMask / spill, 0., 1.), 1.5);
+    float desat = clamp(rgba.r * 0.2126 + rgba.g * 0.7152 + rgba.b * 0.0722, 0., 1.);
+    rgba.rgb = mix(vec3(desat, desat, desat), rgba.rgb, spillVal);
+
+    	// RGB to LMS matrix conversion
+	float L = (17.8824 * rgba.r) + (43.5161 * rgba.g) + (4.11935 * rgba.b);
+	float M = (3.45565 * rgba.r) + (27.1554 * rgba.g) + (3.86714 * rgba.b);
+	float S = (0.0299566 * rgba.r) + (0.184309 * rgba.g) + (1.46709 * rgba.b);
+
+	// Simulate color blindness
+	float l = 0.0;
+	float m = 0.0;
+	float s = 0.0;
+
+	if (colour_blindness_type == 1.0) // Protanope - reds are greatly reduced (1% men)
+		l = 0.0 * L + 2.02344 * M + -2.52581 * S;
+		m = 0.0 * L + 1.0 * M + 0.0 * S;
+		s = 0.0 * L + 0.0 * M + 1.0 * S;
+
+
+	if ( colour_blindness_type == 2.0) // Deuteranope - greens are greatly reduced (1% men)
+		l = 1.0 * L + 0.0 * M + 0.0 * S;
+		m = 0.494207 * L + 0.0 * M + 1.24827 * S;
+		s = 0.0 * L + 0.0 * M + 1.0 * S;
+
+
+	if ( colour_blindness_type == 3.0) // Tritanope - blues are greatly reduced (0.003% population)
+		l = 1.0 * L + 0.0 * M + 0.0 * S;
+		m = 0.0 * L + 1.0 * M + 0.0 * S;
+		s = -0.395913 * L + 0.801109 * M + 0.0 * S;
+
+
+	// LMS to RGB matrix conversion
+	vec4 error;
+	error.r = float(0.0809444479 * l) + float(-0.130504409 * m) + float(0.116721066 * s);
+	error.g = float(-0.0102485335 * l) + float(0.0540193266 * m) + float(-0.113614708 * s);
+	error.b = float(-0.000365296938 * l) + float(-0.00412161469 * m) + float(0.693511405 * s);
+	error.a = 1.0;
+
+	gl_FragColor = error.rgba;
+  }
+
+
+    </script>
+    <script type="text/javascript">
+        const webcamVideoEl = document.getElementById("webcamVideo");
+        const displayCanvasEl = document.getElementById("display");
+        const gl = displayCanvasEl.getContext("webgl", {premultipliedAlpha: false});
+
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, 'attribute vec2 c; void main(void) { gl_Position=vec4(c, 0.0, 1.0); }');
+        gl.compileShader(vs);
+
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, document.getElementById("fragment-shader").innerText);
+        gl.compileShader(fs);
+        if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+            console.error(gl.getShaderInfoLog(fs));
+        }
+
+        const prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, fs);
+        gl.linkProgram(prog);
+        gl.useProgram(prog);
+
+        const vb = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, -1, -1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+        const coordLoc = gl.getAttribLocation(prog, 'c');
+        gl.vertexAttribPointer(coordLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(coordLoc);
+
+        gl.activeTexture(gl.TEXTURE0);
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+        const texLoc = gl.getUniformLocation(prog, "tex");
+        const texWidthLoc = gl.getUniformLocation(prog, "texWidth");
+        const texHeightLoc = gl.getUniformLocation(prog, "texHeight");
+        const colour_blindness_type = gl.getUniformLocation(prog, "colour_blindness_type");
+        const keyColorLoc = gl.getUniformLocation(prog, "keyColor");
+        const similarityLoc = gl.getUniformLocation(prog, "similarity");
+        const smoothnessLoc = gl.getUniformLocation(prog, "smoothness");
+        const spillLoc = gl.getUniformLocation(prog, "spill");
+
+        function startWebcam() {
+            navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment",
+                    width: {ideal: 1280},
+                    height: {ideal: 720}
+                }
+            }).then(stream => {
+                webcamVideoEl.srcObject = stream;
+                webcamVideoEl.play();
+
+                function processFrame(now, metadata) {
+                    displayCanvasEl.width = metadata.width;
+                    displayCanvasEl.height = metadata.height;
+                    gl.viewport(0, 0, metadata.width, metadata.height);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, webcamVideoEl);
+                    gl.uniform1i(texLoc, 0);
+                    gl.uniform1f(texWidthLoc, metadata.width);
+                    gl.uniform1f(texHeightLoc, metadata.height);
+                    var colour_blindness_type_int = parseFloat(document.querySelector('input[name="colour_blindness_type"]:checked').value);
+                    gl.uniform1f(colour_blindness_type, colour_blindness_type_int);
+                    //const m = document.getElementById("keyColor").value.match(/^#([0-9a-f]{6})$/i)[1];
+                    //gl.uniform3f(keyColorLoc, parseInt(m.substr(0, 2), 16) / 255, parseInt(m.substr(2, 2), 16) / 255, parseInt(m.substr(4, 2), 16) / 255);
+                    //gl.uniform1f(similarityLoc, parseFloat(document.getElementById("similarity").value));
+                    //gl.uniform1f(smoothnessLoc, parseFloat(document.getElementById("smoothness").value));
+                    //gl.uniform1f(spillLoc, parseFloat(document.getElementById("spill").value));
+                    gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+                    webcamVideoEl.requestVideoFrameCallback(processFrame);
+                }
+
+                webcamVideoEl.requestVideoFrameCallback(processFrame);
+            }).catch(error => {
+                console.error(error);
+            });
+        }
+    </script>
+
+
+</body>
+</html>
