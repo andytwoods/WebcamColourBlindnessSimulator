@@ -1,260 +1,328 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>AR Colour blindness simulator</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet"
-          integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
-<style>
-    footer {
-        position: absolute;
-        bottom: 0;
-        width: 100%;
-        background: rgba(68, 53, 53, 40%)
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Colour Blindness Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; }
+        #canvas-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            position: relative;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .canvas-wrapper {
+            display: flex;
+            justify-content: space-between;
+            width: 100%; /* Ensure the container fills the available width */
+        }
 
-    h4 {
-    font-size: calc(.8rem + .3vw);
-    }
-</style>
+        .canvas-wrapper canvas {
+            flex: 1; /* Equal width for each canvas */
+        }
+        canvas {
+            //width: 100%;
+            //height: 100%;
+        }
+    </style>
 </head>
-<body class="d-flex flex-column min-vh-100">
-
-<div id="content">
-    <p id="video-container" hidden>
-        <video id="webcamVideo" autoplay muted playsinline hidden></video>
-        <canvas id="display"
-                style="background-size: cover;  max-width: 100%;"></canvas>
-    </p>
-    <div class="container" id="blurb">
-        <div class="row">
-            <h1>AR Colour blindness simulator <a class='fs-6 text' target="_blank" href="https://github.com/andytwoods/WebcamColourBlindnessSimulator">github</a></h1>
-            <p>Shader in browser inspired by
-                https://jameshfisher.com/2020/08/11/production-ready-green-screen-in-the-browser/</p>
-            <p>Colour blindness shader adapted from https://gist.github.com/jcdickinson/580b7fb5cc145cee8740</p>
-        </div>
-        <div class="row">
-            <div class="col-12 text-center">
-                <button class='btn btn-primary btn-lg mb-5 mt-5'
-                        onclick="startWebcam(); this.parentElement.removeChild(this)">Start webcam
-                </button>
-            </div>
-        </div>
+<body class="bg-gray-900">
+<div id="canvas-container">
+    <div class="controls">
+        <label for="camera" class="block text-white mb-2">Camera:</label>
+        <select id="camera" class="block mb-4 p-2 rounded"></select>
+        <label class="block text-white mb-2">
+            <input type="checkbox" id="mirror" class="mr-2"> Mirror Image
+        </label>
     </div>
-
-    <footer class="footer mt-auto py-3">
-        <div class="container ms-0">
-            <div class="row ms-0">
-                <div class="col">
-                    <h4 class="inline-block">Colour blindness type</h4>
-                    <span><input type="radio" class="form-check-input" name="colour_blindness_type" checked='checked'
-                           value="1">Protanope - reds are greatly reduced (1% men)</span><br>
-                    <span><input type="radio" class="form-check-input" name="colour_blindness_type" value="2">Deuteranope -
-                    greens are greatly reduced (1% men)</span><br>
-                    <span><input type="radio" class="form-check-input" name="colour_blindness_type" value="3">Tritanope - blues are greatly reduced</span>
-                    (0.003% population)
-                    <h4 class="mt-1">Apply correction?</h4>
-                    <input type="radio" class="form-check-input" name="colour_blindness_correction" checked='checked'
-                           value="0">No
-                    <input type="radio" class="form-check-input ms-2" name="colour_blindness_correction" value="1">Yes
-                </div>
-            </div>
-        </div>
-    </footer>
-
+    <div id="multiple-canvases" class="canvas-wrapper">
+        <canvas id="canvas1" class="h-full w-1/3"></canvas>
+        <canvas id="canvas2" class="h-full w-1/3"></canvas>
+        <canvas id="canvas3" class="h-full w-1/3"></canvas>
+    </div>
 </div>
-<script id="fragment-shader" type="glsl">
-  precision mediump float;
+<script>
+    const vertexShaderSource = `
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 vTexCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0, 1);
+            vTexCoord = vec2(a_texCoord.x, 1.0 - a_texCoord.y);
+        }
+    `;
 
-  uniform sampler2D tex;
-  uniform float texWidth;
-  uniform float texHeight;
-  uniform float colour_blindness_type;
-  uniform float colour_blindness_correction;
+    const fragmentShaderSource = `
+        precision mediump float;
+        uniform sampler2D tex;
+        uniform int colour_blindness_type;
+        uniform float colour_blindness_correction;
+        varying vec2 vTexCoord;
 
-  uniform vec3 keyColor;
-  uniform float similarity;
-  uniform float smoothness;
-  uniform float spill;
+        void main(void) {
+            vec4 color = texture2D(tex, vTexCoord);
 
-  // From https://github.com/libretro/glsl-shaders/blob/master/nnedi3/shaders/rgb-to-yuv.glsl
-  vec2 RGBtoUV(vec3 rgb) {
-    return vec2(
-      rgb.r * -0.169 + rgb.g * -0.331 + rgb.b *  0.5    + 0.5,
-      rgb.r *  0.5   + rgb.g * -0.419 + rgb.b * -0.081  + 0.5
-    );
-  }
+            // RGB to LMS conversion
+            mat3 RGB_to_LMS = mat3(
+                0.31399022, 0.63951294, 0.04649755,
+                0.15537241, 0.75789446, 0.08670142,
+                0.01775239, 0.10944209, 0.87256922
+            );
 
+            // LMS to RGB conversion
+            mat3 LMS_to_RGB = mat3(
+                5.47221206, -4.6419601, 0.16963708,
+                -1.1252419, 2.29317094, -0.1678952,
+                0.02980165, -0.19318073, 1.16364789
+            );
 
-  void main(void) {
-    vec2 texCoord = vec2(gl_FragCoord.x/texWidth, 1.0 - (gl_FragCoord.y/texHeight));
+            // Transform the color from RGB to LMS
+            vec3 LMS = RGB_to_LMS * color.rgb;
 
-    vec4 rgba = texture2D(tex, texCoord);
-    float chromaDist = distance(RGBtoUV(texture2D(tex, texCoord).rgb), RGBtoUV(keyColor));
+            vec3 simulated_LMS;
+            if (colour_blindness_type == 0) {
+                // Protanopia simulation
+                simulated_LMS = vec3(
+                    0.0,
+                    LMS.g,
+                    LMS.b
+                );
+            } else if (colour_blindness_type == 1) {
+                // Deuteranopia simulation
+                simulated_LMS = vec3(
+                    LMS.r,
+                    0.0,
+                    LMS.b
+                );
+            } else if (colour_blindness_type == 2) {
+                // Tritanopia simulation
+                simulated_LMS = vec3(
+                    LMS.r,
+                    LMS.g,
+                    0.0
+                );
+            } else {
+                simulated_LMS = LMS;
+            }
 
-    float baseMask = chromaDist - similarity;
-    float fullMask = pow(clamp(baseMask / smoothness, 0., 1.), 1.5);
-    rgba.a = fullMask;
+            // Adjust the simulation with the correction factor
+            simulated_LMS = mix(LMS, simulated_LMS, colour_blindness_correction);
 
-    float spillVal = pow(clamp(baseMask / spill, 0., 1.), 1.5);
-    float desat = clamp(rgba.r * 0.2126 + rgba.g * 0.7152 + rgba.b * 0.0722, 0., 1.);
-    rgba.rgb = mix(vec3(desat, desat, desat), rgba.rgb, spillVal);
+            // Transform the color back from LMS to RGB
+            vec3 simulated_RGB = LMS_to_RGB * simulated_LMS;
 
-    	// RGB to LMS matrix conversion
-	float L = (17.8824 * rgba.r) + (43.5161 * rgba.g) + (4.11935 * rgba.b);
-	float M = (3.45565 * rgba.r) + (27.1554 * rgba.g) + (3.86714 * rgba.b);
-	float S = (0.0299566 * rgba.r) + (0.184309 * rgba.g) + (1.46709 * rgba.b);
+            gl_FragColor = vec4(simulated_RGB, color.a);
+        }
+    `;
 
-	// Simulate color blindness
-	float l = 0.0;
-	float m = 0.0;
-	float s = 0.0;
+    const canvas1 = document.getElementById('canvas1');
+    const canvas2 = document.getElementById('canvas2');
+    const canvas3 = document.getElementById('canvas3');
+    const gl1 = canvas1.getContext('webgl');
+    const gl2 = canvas2.getContext('webgl');
+    const gl3 = canvas3.getContext('webgl');
 
-    // Protanope - reds are greatly reduced (1% men)
-	if (colour_blindness_type == 1.0){
-		l = 0.0 * L + 2.02344 * M + -2.52581 * S;
-		m = 0.0 * L + 1.0 * M + 0.0 * S;
-		s = 0.0 * L + 0.0 * M + 1.0 * S;
-		}
-
-    // Deuteranope - greens are greatly reduced (1% men)
-	if (colour_blindness_type == 2.0){
-		l = 1.0 * L + 0.0 * M + 0.0 * S;
-		m = 0.494207 * L + 0.0 * M + 1.24827 * S;
-		s = 0.0 * L + 0.0 * M + 1.0 * S;
-		}
-
-    // Tritanope - blues are greatly reduced (0.003% population)
-	if (colour_blindness_type == 3.0){
-		l = 1.0 * L + 0.0 * M + 0.0 * S;
-		m = 0.0 * L + 1.0 * M + 0.0 * S;
-		s = -0.395913 * L + 0.801109 * M + 0.0 * S;
-		}
-
-	// LMS to RGB matrix conversion
-	vec4 error;
-	error.r = float(0.0809444479 * l) + float(-0.130504409 * m) + float(0.116721066 * s);
-	error.g = float(-0.0102485335 * l) + float(0.0540193266 * m) + float(-0.113614708 * s);
-	error.b = float(-0.000365296938 * l) + float(-0.00412161469 * m) + float(0.693511405 * s);
-	error.a = 1.0;
-
-	if(colour_blindness_correction == 0.0){
-	    gl_FragColor = error.rgba;
-	}
-
-	else{
-	// Isolate invisible colors to color vision deficiency (calculate error matrix)
-	    error = (rgba - error);
-
-	// Shift colors towards visible spectrum (apply error modifications)
-	    vec4 correction;
-	    correction.r = 0.0; // (error.r * 0.0) + (error.g * 0.0) + (error.b * 0.0);
-	    correction.g = float(error.r * 0.7) + float(error.g * 1.0); // + (error.b * 0.0);
-	    correction.b = float(error.r * 0.7) + float(error.b * 1.0); // + (error.g * 0.0);
-
-	// Add compensation to original values
-	    correction = rgba + correction;
-	    correction.a = rgba.a;
-
-	    gl_FragColor = correction.rgba;
-	}
-  }
-
-</script>
-<script type="text/javascript">
-    const webcamVideoEl = document.getElementById("webcamVideo");
-    const displayCanvasEl = document.getElementById("display");
-    const gl = displayCanvasEl.getContext("webgl", {premultipliedAlpha: false});
-
-    const vs = gl.createShader(gl.VERTEX_SHADER);
-    gl.shaderSource(vs, 'attribute vec2 c; void main(void) { gl_Position=vec4(c, 0.0, 1.0); }');
-    gl.compileShader(vs);
-
-    const fs = gl.createShader(gl.FRAGMENT_SHADER);
-    gl.shaderSource(fs, document.getElementById("fragment-shader").innerText);
-    gl.compileShader(fs);
-    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-        console.error(gl.getShaderInfoLog(fs));
+    function createShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error(gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
     }
 
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vs);
-    gl.attachShader(prog, fs);
-    gl.linkProgram(prog);
-    gl.useProgram(prog);
+    function createProgram(gl, vertexShader, fragmentShader) {
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            console.error(gl.getProgramInfoLog(program));
+            gl.deleteProgram(program);
+            return null;
+        }
+        return program;
+    }
 
-    const vb = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, -1, -1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    const vertexShader1 = createShader(gl1, gl1.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader1 = createShader(gl1, gl1.FRAGMENT_SHADER, fragmentShaderSource);
+    const program1 = createProgram(gl1, vertexShader1, fragmentShader1);
 
-    const coordLoc = gl.getAttribLocation(prog, 'c');
-    gl.vertexAttribPointer(coordLoc, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(coordLoc);
+    const vertexShader2 = createShader(gl2, gl2.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader2 = createShader(gl2, gl2.FRAGMENT_SHADER, fragmentShaderSource);
+    const program2 = createProgram(gl2, vertexShader2, fragmentShader2);
 
-    gl.activeTexture(gl.TEXTURE0);
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
+    const vertexShader3 = createShader(gl3, gl3.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader3 = createShader(gl3, gl3.FRAGMENT_SHADER, fragmentShaderSource);
+    const program3 = createProgram(gl3, vertexShader3, fragmentShader3);
 
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    function setupBuffers(gl, program) {
+        const positionLocation = gl.getAttribLocation(program, 'a_position');
+        const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
 
-    const texLoc = gl.getUniformLocation(prog, "tex");
-    const texWidthLoc = gl.getUniformLocation(prog, "texWidth");
-    const texHeightLoc = gl.getUniformLocation(prog, "texHeight");
-    const colour_blindness_type = gl.getUniformLocation(prog, "colour_blindness_type");
-    const colour_blindness_correction = gl.getUniformLocation(prog, "colour_blindness_correction");
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+            1, -1,
+            -1,  1,
+            -1,  1,
+            1, -1,
+            1,  1,
+        ]), gl.STATIC_DRAW);
 
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            0, 0,
+            1, 0,
+            0, 1,
+            0, 1,
+            1, 0,
+            1, 1,
+        ]), gl.STATIC_DRAW);
 
-    function startWebcam() {
-        document.getElementById('blurb').setAttribute("hidden", "hidden");
-        document.getElementById('video-container').removeAttribute("hidden");
-        navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: "environment",
-                width: {ideal: 1280},
-                height: {ideal: 720}
-            }
-        }).then(stream => {
+        return { positionLocation, texCoordLocation, positionBuffer, texCoordBuffer };
+    }
 
-            webcamVideoEl.srcObject = stream;
-            webcamVideoEl.play();
+    const buffers1 = setupBuffers(gl1, program1);
+    const buffers2 = setupBuffers(gl2, program2);
+    const buffers3 = setupBuffers(gl3, program3);
 
-            function processFrame(now, metadata) {
-                displayCanvasEl.width = metadata.width;
-                displayCanvasEl.height = metadata.height;
+    let video = document.createElement('video');
+    video.autoplay = true;
+    video.style.objectFit = 'cover';
+    let currentStream = null;
 
-                gl.viewport(0, 0, metadata.width, metadata.height);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, webcamVideoEl);
-                gl.uniform1i(texLoc, 0);
-                gl.uniform1f(texWidthLoc, metadata.width);
-                gl.uniform1f(texHeightLoc, metadata.height);
+    async function setupVideo(deviceId) {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        const constraints = {
+            video: { deviceId: deviceId ? { exact: deviceId } : undefined }
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+        return video;
+    }
 
-                var colour_blindness_type_int = parseFloat(
-                    document.querySelector('input[name="colour_blindness_type"]:checked').value
-                );
-                gl.uniform1f(colour_blindness_type, colour_blindness_type_int);
-
-                var colour_blindness_correction_int = parseFloat(
-                    document.querySelector('input[name="colour_blindness_correction"]:checked').value
-                );
-                gl.uniform1f(colour_blindness_correction, colour_blindness_correction_int);
-
-                gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
-                webcamVideoEl.requestVideoFrameCallback(processFrame);
-            }
-
-            webcamVideoEl.requestVideoFrameCallback(processFrame);
-        }).catch(error => {
-            console.error(error);
+    async function getCameras() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const cameraSelect = document.getElementById('camera');
+        cameraSelect.innerHTML = '';
+        videoDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+            cameraSelect.appendChild(option);
         });
     }
+
+    function updateTexture(gl) {
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        return texture;
+    }
+
+    function drawScene(gl, program, buffers, type, mirror) {
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(program);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.positionBuffer);
+        gl.enableVertexAttribArray(buffers.positionLocation);
+        gl.vertexAttribPointer(buffers.positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texCoordBuffer);
+        gl.enableVertexAttribArray(buffers.texCoordLocation);
+        gl.vertexAttribPointer(buffers.texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+        const texture = updateTexture(gl);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+        gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), type);
+        gl.uniform1f(gl.getUniformLocation(program, 'colour_blindness_correction'), 1.0);
+
+        if (mirror) {
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                1, -1,
+                -1, -1,
+                1, 1,
+                1, 1,
+                -1, -1,
+                -1, 1,
+            ]), gl.STATIC_DRAW);
+        } else {
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1, -1,
+                1, -1,
+                -1, 1,
+                -1, 1,
+                1, -1,
+                1, 1,
+            ]), gl.STATIC_DRAW);
+        }
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
+    function resizeCanvases() {
+        const canvases = [canvas1, canvas2, canvas3];
+        canvases.forEach(canvas => {
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        });
+    }
+
+    window.addEventListener('resize', resizeCanvases);
+    resizeCanvases();
+
+    function render() {
+        const mirror = document.getElementById('mirror').checked;
+
+        drawScene(gl1, program1, buffers1, 0, mirror);
+        drawScene(gl2, program2, buffers2, 1, mirror);
+        drawScene(gl3, program3, buffers3, 2, mirror);
+
+        requestAnimationFrame(render);
+    }
+
+    document.getElementById('camera').addEventListener('change', async (event) => {
+        await setupVideo(event.target.value);
+        video.play();
+    });
+
+    video.addEventListener('canplay', () => {
+        video.play();
+        requestAnimationFrame(render);
+    });
+
+    getCameras();
+    setupVideo();
 </script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4"
-        crossorigin="anonymous"></script>
-
 </body>
 </html>
