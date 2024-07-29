@@ -1,0 +1,66 @@
+/* styles.css */
+
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    height: 100%;
+    font-family: Arial, sans-serif;
+}
+
+#canvas-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.overlay-title {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 5px 10px;
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    font-size: 24px;
+    border-radius: 5px;
+}
+
+.label {
+    position: absolute;
+    top: 60px;
+    color: white;
+    text-shadow: 1px 1px 3px black;
+    font-size: 20px;
+    text-align: center;
+    width: 33.33%;
+}
+
+#label1 { left: 0; }
+#label2 { left: 33.33%; }
+#label3 { left: 66.66%; }
+
+#controls {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    z-index: 1;
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#mirror-button,
+#device-select,
+#resolution-select,
+#brightness-slider {
+    margin: 5px 0;
+    font-size: 16px;
+}
