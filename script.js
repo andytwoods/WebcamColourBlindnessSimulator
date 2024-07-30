@@ -146,16 +146,6 @@ async function getWebcamDevices() {
     }
 }
 
-async function setupVideo(constraints) {
-    if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-    }
-
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = currentStream;
-    return video;
-}
-
 document.getElementById('mirror-button').addEventListener('click', () => {
     mirror = !mirror;
     updateBuffer();
@@ -172,7 +162,14 @@ document.getElementById('resolution-select').addEventListener('change', async (e
     const deviceId = document.getElementById('device-select').value;
     await setupVideo({ video: { deviceId: { exact: deviceId }, width: { ideal: width }, height: { ideal: height } } });
     updateBuffer();
+    adjustCanvasSize(width, height);
 });
+
+function adjustCanvasSize(width, height) {
+    canvas.width = width;
+    canvas.height = height;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+}
 
 function updateBuffer() {
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -223,10 +220,56 @@ function drawScene() {
     requestAnimationFrame(drawScene);
 }
 
-getWebcamDevices().then(() => {
-    setupVideo({ video: true }).then(() => {
-        video.play();
+document.addEventListener('DOMContentLoaded', () => {
+    getWebcamDevices().then(() => {
+        setupVideo({ video: true }).then(() => {
+            updateResolutions();
+            video.play();
+            updateBuffer();
+            requestAnimationFrame(drawScene);
+        });
+    });
+
+    document.getElementById('device-select').addEventListener('change', async (event) => {
+        const deviceId = event.target.value;
+        await setupVideo({ video: { deviceId: { exact: deviceId } } });
         updateBuffer();
-        requestAnimationFrame(drawScene);
+        updateResolutions();
     });
 });
+
+
+async function updateResolutions() {
+    const deviceId = document.getElementById('device-select').value;
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } });
+    const track = stream.getVideoTracks()[0];
+    const capabilities = track.getCapabilities();
+    const resolutionSelect = document.getElementById('resolution-select');
+
+    resolutionSelect.innerHTML = ''; // Clear previous options
+
+    if (capabilities.width && capabilities.height && capabilities.width > 1) {
+        const resolutions = [];
+        capabilities.width.max && capabilities.height.max && resolutions.push(`${capabilities.width.max}x${capabilities.height.max}`);
+        capabilities.width.min && capabilities.height.min && resolutions.push(`${capabilities.width.min}x${capabilities.height.min}`);
+
+        resolutions.forEach(resolution => {
+            const option = document.createElement('option');
+            option.value = resolution;
+            option.text = resolution;
+            resolutionSelect.appendChild(option);
+        });
+    }
+    // Stop the temporary stream
+    track.stop();
+}
+
+async function setupVideo(constraints) {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+    }
+
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = currentStream;
+    return video;
+}
