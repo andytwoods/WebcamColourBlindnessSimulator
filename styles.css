@@ -12,12 +12,15 @@ body, html {
     position: relative;
     width: 100%;
     height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 canvas {
     display: block;
     width: 100%;
-    height: 100%;
+    height: auto; /* Ensures the aspect ratio is maintained */
 }
 
 .overlay-title {
@@ -43,9 +46,17 @@ canvas {
     width: 33.33%;
 }
 
-#label1 { left: 0; }
-#label2 { left: 33.33%; }
-#label3 { left: 66.66%; }
+#label1 {
+    left: 0;
+}
+
+#label2 {
+    left: 33.33%;
+}
+
+#label3 {
+    left: 66.66%;
+}
 
 #controls {
     position: absolute;
@@ -63,4 +74,21 @@ canvas {
 #brightness-slider {
     margin: 5px 0;
     font-size: 16px;
+}
+
+#orientation-warning {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 2em;
+    z-index: 1000;
+    visibility: hidden;
 }

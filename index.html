@@ -7,25 +7,28 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="canvas-container">
-        <h1 class="overlay-title">Andy and Jas's Colour Blindness Simulator</h1>
-        <canvas id="canvas"></canvas>
-        <div id="label1" class="label">Protanopia</div>
-        <div id="label2" class="label">Deuteranopia</div>
-        <div id="label3" class="label">Tritanopia</div>
-        <div id="controls">
-            <button id="mirror-button">Mirror Video</button>
-            <label for="device-select">Select Camera:</label>
-            <select id="device-select"></select>
-            <label for="resolution-select">Resolution:</label>
-            <select id="resolution-select">
-                <option value="640x480">640x480</option>
-                <option value="1280x720">1280x720</option>
-                <option value="1920x1080">1920x1080</option>
-            </select>
+<div id="orientation-warning">
+    Please rotate your device to landscape mode.
+</div>
+<div id="canvas-container">
+    <h1 class="overlay-title">Andy and Jas's Colour Blindness Simulator</h1>
+    <canvas id="canvas"></canvas>
+    <div id="label1" class="label">Protanopia</div>
+    <div id="label2" class="label">Deuteranopia</div>
+    <div id="label3" class="label">Tritanopia</div>
+    <div id="controls">
+        <button id="mirror-button">Mirror Video</button>
+        <label for="device-select">Select Camera:</label>
+        <select id="device-select"></select>
+        <label for="resolution-select">Resolution:</label>
+        <select id="resolution-select">
+            <option value="640x480">640x480</option>
+            <option value="1280x720">1280x720</option>
+            <option value="1920x1080">1920x1080</option>
+        </select>
 
-        </div>
     </div>
-    <script src="script.js"></script>
+</div>
+<script src="script.js"></script>
 </body>
 </html>

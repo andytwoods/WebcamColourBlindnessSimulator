@@ -153,14 +153,14 @@ document.getElementById('mirror-button').addEventListener('click', () => {
 
 document.getElementById('device-select').addEventListener('change', async (event) => {
     const deviceId = event.target.value;
-    await setupVideo({ video: { deviceId: { exact: deviceId } } });
+    await setupVideo({video: {deviceId: {exact: deviceId}}});
     updateBuffer();
 });
 
 document.getElementById('resolution-select').addEventListener('change', async (event) => {
     const [width, height] = event.target.value.split('x').map(Number);
     const deviceId = document.getElementById('device-select').value;
-    await setupVideo({ video: { deviceId: { exact: deviceId }, width: { ideal: width }, height: { ideal: height } } });
+    await setupVideo({video: {deviceId: {exact: deviceId}, width: {ideal: width}, height: {ideal: height}}});
     updateBuffer();
     adjustCanvasSize(width, height);
 });
@@ -222,7 +222,8 @@ function drawScene() {
 
 document.addEventListener('DOMContentLoaded', () => {
     getWebcamDevices().then(() => {
-        setupVideo({ video: true }).then(() => {
+        setupVideo({video: true}).then(() => {
+            console.log(11)
             updateResolutions();
             video.play();
             updateBuffer();
@@ -232,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('device-select').addEventListener('change', async (event) => {
         const deviceId = event.target.value;
-        await setupVideo({ video: { deviceId: { exact: deviceId } } });
+        await setupVideo({video: {deviceId: {exact: deviceId}}});
         updateBuffer();
         updateResolutions();
     });
@@ -241,28 +242,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function updateResolutions() {
     const deviceId = document.getElementById('device-select').value;
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } } });
+    const stream = await navigator.mediaDevices.getUserMedia({video: {deviceId: {exact: deviceId}}});
     const track = stream.getVideoTracks()[0];
     const capabilities = track.getCapabilities();
     const resolutionSelect = document.getElementById('resolution-select');
 
     resolutionSelect.innerHTML = ''; // Clear previous options
 
-    if (capabilities.width && capabilities.height && capabilities.width > 1) {
-        const resolutions = [];
-        capabilities.width.max && capabilities.height.max && resolutions.push(`${capabilities.width.max}x${capabilities.height.max}`);
-        capabilities.width.min && capabilities.height.min && resolutions.push(`${capabilities.width.min}x${capabilities.height.min}`);
+    if (capabilities.width && capabilities.height && capabilities.width.max > 1) {
+        const resolutions = [
+            {width: 320, height: 240},  // Example of common resolutions
+            {width: 640, height: 480},
+            {width: 1280, height: 720},
+            {width: 1920, height: 1080},
+            {width: 3840, height: 2160}
+        ];
 
-        resolutions.forEach(resolution => {
-            const option = document.createElement('option');
-            option.value = resolution;
-            option.text = resolution;
-            resolutionSelect.appendChild(option);
+        resolutions.forEach(({width, height}) => {
+            if (width <= capabilities.width.max && height <= capabilities.height.max &&
+                width >= capabilities.width.min && height >= capabilities.height.min) {
+                const option = document.createElement('option');
+                option.value = `${width}x${height}`;
+                option.text = `${width}x${height}`;
+                resolutionSelect.appendChild(option);
+            }
         });
+    } else {
+        console.warn('No valid resolutions found for this device.');
     }
-    // Stop the temporary stream
+
+    // Stop the temporary stream to release the device
     track.stop();
 }
+
 
 async function setupVideo(constraints) {
     if (currentStream) {
@@ -273,3 +285,20 @@ async function setupVideo(constraints) {
     video.srcObject = currentStream;
     return video;
 }
+
+function checkOrientation() {
+    const warning = document.getElementById('orientation-warning');
+    if (window.innerWidth < window.innerHeight) {
+        // Portrait mode
+        warning.style.visibility = 'visible';
+    } else {
+        // Landscape mode
+        warning.style.visibility = 'hidden';
+    }
+}
+
+// Initial check
+checkOrientation();
+
+// Listen for resize events
+window.addEventListener('resize', checkOrientation);
