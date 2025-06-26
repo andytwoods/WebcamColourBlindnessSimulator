@@ -671,13 +671,9 @@
         // Update section labels if in "Show All" mode
         const type = parseInt(document.getElementById('type').value);
         if (type === 3) {
-            // Determine layout based on orientation, aspect ratio, and screen size
+            // Determine layout based on orientation and aspect ratio
             const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-            const isVerySmallScreen = Math.min(containerWidth, containerHeight) < 400;
-
-            // Use the same layout determination logic as in drawScene
-            const layout = (isLandscape && containerAspectRatio >= 1.5) ||
-                          (isVerySmallScreen && containerWidth > containerHeight) ? 'horizontal' : 'vertical';
+            const layout = isLandscape && containerAspectRatio >= 1.5 ? 'horizontal' : 'vertical';
             // Let drawScene handle the actual label positioning on the next frame
             updateSectionLabels(true, layout, null);
         }
