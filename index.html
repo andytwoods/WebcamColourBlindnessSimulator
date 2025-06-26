@@ -37,30 +37,70 @@
             font-size: 14px;
             z-index: 5;
         }
+
+        /* Ensure canvas elements maintain aspect ratio */
+        canvas {
+            display: block;
+            width: auto !important;
+            height: auto !important;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
     </style>
 </head>
 <body class="bg-gray-900">
-<div id="canvas-container">
-    <canvas id="canvas" class="w-full h-full"></canvas>
-    <div class="controls">
-        <label for="type" class="block text-white mb-2">Type:</label>
-        <select id="type" class="block mb-4 p-2 rounded">
+<div id="canvas-container" class="relative w-full h-screen flex justify-center items-center">
+    <!-- Main canvas for single view mode -->
+    <canvas id="canvas" class="max-w-full max-h-full object-contain hidden" data-view="single"></canvas>
+
+    <!-- Container for multi-view mode -->
+    <div id="multi-view-container" class="w-full h-full flex flex-col lg:flex-row justify-center items-center" data-view="multi">
+        <!-- Protanopia section -->
+        <div class="protanopia-section relative w-full lg:w-1/3 h-1/3 lg:h-full p-1 flex justify-center items-center">
+            <canvas id="canvas-protanopia" class="max-w-full max-h-full object-contain"></canvas>
+            <div class="section-label absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                Protanopia (Red-Green Color Blindness)
+            </div>
+        </div>
+
+        <!-- Deuteranopia section -->
+        <div class="deuteranopia-section relative w-full lg:w-1/3 h-1/3 lg:h-full p-1 flex justify-center items-center">
+            <canvas id="canvas-deuteranopia" class="max-w-full max-h-full object-contain"></canvas>
+            <div class="section-label absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                Deuteranopia (Red-Green Color Blindness)
+            </div>
+        </div>
+
+        <!-- Tritanopia section -->
+        <div class="tritanopia-section relative w-full lg:w-1/3 h-1/3 lg:h-full p-1 flex justify-center items-center">
+            <canvas id="canvas-tritanopia" class="max-w-full max-h-full object-contain"></canvas>
+            <div class="section-label absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+                Tritanopia (Blue-Yellow Color Blindness)
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls panel -->
+    <div class="controls absolute top-4 left-4 bg-white bg-opacity-80 p-3 rounded z-10">
+        <label for="type" class="block text-gray-800 mb-2">Type:</label>
+        <select id="type" class="block mb-4 p-2 rounded w-full">
             <option value="3" selected>Show All</option>
             <option value="0">Protanopia</option>
             <option value="1">Deuteranopia</option>
             <option value="2">Tritanopia</option>
         </select>
-        <label for="correction" class="block text-white mb-2">Correction:</label>
+        <label for="correction" class="block text-gray-800 mb-2">Correction:</label>
         <input type="range" id="correction" min="0" max="1" step="0.01" value="1" class="block mb-4 w-full">
-        <label for="camera" class="block text-white mb-2">Camera:</label>
-        <select id="camera" class="block mb-4 p-2 rounded"></select>
-        <label for="resolution" class="block text-white mb-2">Resolution:</label>
-        <select id="resolution" class="block mb-4 p-2 rounded">
+        <label for="camera" class="block text-gray-800 mb-2">Camera:</label>
+        <select id="camera" class="block mb-4 p-2 rounded w-full"></select>
+        <label for="resolution" class="block text-gray-800 mb-2">Resolution:</label>
+        <select id="resolution" class="block mb-4 p-2 rounded w-full">
             <option value="640x480">640x480</option>
             <option value="1280x720" selected>1280x720 (HD)</option>
             <option value="1920x1080">1920x1080 (Full HD)</option>
         </select>
-        <label class="block text-white mb-2">
+        <label class="block text-gray-800 mb-2 flex items-center">
             <input type="checkbox" id="mirror" class="mr-2"> Mirror Image
         </label>
     </div>
@@ -147,8 +187,20 @@
             }
         `;
 
-    const canvas = document.getElementById('canvas');
-    const gl = canvas.getContext('webgl');
+    // Get all canvases
+    const singleCanvas = document.getElementById('canvas');
+    const protanopiaCanvas = document.getElementById('canvas-protanopia');
+    const deuteranopiaCanvas = document.getElementById('canvas-deuteranopia');
+    const tritanopiaCanvas = document.getElementById('canvas-tritanopia');
+
+    // Initialize WebGL contexts
+    const singleGl = singleCanvas.getContext('webgl');
+    const protanopiaGl = protanopiaCanvas.getContext('webgl');
+    const deuteranopiaGl = deuteranopiaCanvas.getContext('webgl');
+    const tritanopiaGl = tritanopiaCanvas.getContext('webgl');
+
+    // Store all contexts in an array for easier access
+    const glContexts = [protanopiaGl, deuteranopiaGl, tritanopiaGl, singleGl];
 
     function createShader(gl, type, source) {
         const shader = gl.createShader(type);
@@ -175,41 +227,67 @@
         return program;
     }
 
-    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    const program = createProgram(gl, vertexShader, fragmentShader);
+    // Initialize WebGL for each context
+    const programs = [];
+    const positionLocations = [];
+    const texCoordLocations = [];
+    const positionBuffers = [];
+    const texCoordBuffers = [];
+    const textures = [];
 
-    const positionLocation = gl.getAttribLocation(program, 'a_position');
-    const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+    glContexts.forEach((gl, index) => {
+        if (!gl) {
+            console.error(`WebGL not supported for canvas ${index}`);
+            return;
+        }
 
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        -1, -1,
-        1, -1,
-        -1, 1,
-        -1, 1,
-        1, -1,
-        1, 1,
-    ]), gl.STATIC_DRAW);
+        // Create shaders and program
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = createProgram(gl, vertexShader, fragmentShader);
+        programs.push(program);
 
-    const texCoordBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        0, 0,
-        1, 0,
-        0, 1,
-        0, 1,
-        1, 0,
-        1, 1,
-    ]), gl.STATIC_DRAW);
+        // Get attribute locations
+        const positionLocation = gl.getAttribLocation(program, 'a_position');
+        const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+        positionLocations.push(positionLocation);
+        texCoordLocations.push(texCoordLocation);
 
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        // Create position buffer
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,
+            1, -1,
+            -1, 1,
+            -1, 1,
+            1, -1,
+            1, 1,
+        ]), gl.STATIC_DRAW);
+        positionBuffers.push(positionBuffer);
+
+        // Create texture coordinate buffer
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            0, 0,
+            1, 0,
+            0, 1,
+            0, 1,
+            1, 0,
+            1, 1,
+        ]), gl.STATIC_DRAW);
+        texCoordBuffers.push(texCoordBuffer);
+
+        // Create texture
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        textures.push(texture);
+    });
 
     let video = document.createElement('video');
     video.autoplay = true;
@@ -261,13 +339,45 @@
                 console.warn(`Aspect ratio mismatch: requested ${requestedAspectRatio.toFixed(3)}, got ${videoAspectRatio.toFixed(3)}`);
             }
 
-            // Set the internal canvas dimensions to match video exactly
-            const canvas = document.getElementById('canvas');
-            canvas.width = settings.width;
-            canvas.height = settings.height;
+            // Set the internal dimensions of all canvases to match video exactly
+            const canvases = [
+                document.getElementById('canvas'),
+                document.getElementById('canvas-protanopia'),
+                document.getElementById('canvas-deuteranopia'),
+                document.getElementById('canvas-tritanopia')
+            ];
 
-            // Adjust the displayed canvas size to maintain aspect ratio
-            setTimeout(adjustCanvasSize, 0);
+            canvases.forEach(canvas => {
+                if (canvas) {
+                    // Set internal dimensions to match video source
+                    canvas.width = settings.width;
+                    canvas.height = settings.height;
+
+                    // Get the container dimensions
+                    const container = canvas.parentElement;
+                    const containerWidth = container.clientWidth;
+                    const containerHeight = container.clientHeight;
+                    const containerAspectRatio = containerWidth / containerHeight;
+
+                    // Calculate the optimal display size that fits within the container
+                    // while maintaining the video's aspect ratio
+                    let displayWidth, displayHeight;
+
+                    if (containerAspectRatio > videoAspectRatio) {
+                        // Container is wider than video
+                        displayHeight = Math.min(containerHeight, settings.height);
+                        displayWidth = displayHeight * videoAspectRatio;
+                    } else {
+                        // Container is taller than video
+                        displayWidth = Math.min(containerWidth, settings.width);
+                        displayHeight = displayWidth / videoAspectRatio;
+                    }
+
+                    // Apply the calculated dimensions via CSS
+                    canvas.style.width = `${displayWidth}px`;
+                    canvas.style.height = `${displayHeight}px`;
+                }
+            });
 
             return video;
         } catch (error) {
@@ -290,105 +400,37 @@
         });
     }
 
-    function updateTexture() {
+    function updateTexture(gl, texture) {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
     }
 
-    // Function to create or update section labels
-    function updateSectionLabels(isShowAll, layout, sectionInfo) {
-        // Remove any existing labels
-        document.querySelectorAll('.section-label').forEach(label => label.remove());
+    // Function to toggle between single and multi view modes
+    function toggleViewMode(showAll) {
+        const singleCanvas = document.getElementById('canvas');
+        const multiViewContainer = document.getElementById('multi-view-container');
 
-        if (!isShowAll) return;
-
-        const container = document.getElementById('canvas-container');
-        const canvas = document.getElementById('canvas');
-        const rect = canvas.getBoundingClientRect();
-
-        const labels = [
-            { id: 'protanopia-label', text: 'Protanopia (Red-Green Color Blindness)' },
-            { id: 'deuteranopia-label', text: 'Deuteranopia (Red-Green Color Blindness)' },
-            { id: 'tritanopia-label', text: 'Tritanopia (Blue-Yellow Color Blindness)' }
-        ];
-
-        // If we don't have section info, use default positioning
-        if (!sectionInfo) {
-            labels.forEach((label, index) => {
-                const elem = document.createElement('div');
-                elem.id = label.id;
-                elem.className = 'section-label';
-                elem.textContent = label.text;
-                container.appendChild(elem);
-
-                // Position the label based on layout
-                if (layout === 'horizontal') {
-                    const sectionWidth = rect.width / 3;
-                    elem.style.left = `${rect.left + (sectionWidth * index) + 10}px`;
-                    elem.style.top = `${rect.top + 10}px`;
-                } else { // vertical
-                    const sectionHeight = rect.height / 3;
-                    elem.style.left = `${rect.left + 10}px`;
-                    elem.style.top = `${rect.top + (sectionHeight * (2 - index)) + 10}px`; // Reverse order (0 at top)
-                }
-            });
-            return;
+        if (showAll) {
+            // Show multi-view mode
+            singleCanvas.classList.add('hidden');
+            multiViewContainer.classList.remove('hidden');
+        } else {
+            // Show single-view mode
+            singleCanvas.classList.remove('hidden');
+            multiViewContainer.classList.add('hidden');
         }
-
-        // Use the section info for precise positioning
-        labels.forEach((label, index) => {
-            const elem = document.createElement('div');
-            elem.id = label.id;
-            elem.className = 'section-label';
-            elem.textContent = label.text;
-            container.appendChild(elem);
-
-            // Get the position info for this section
-            const section = sectionInfo[index];
-
-            // Convert WebGL viewport coordinates to screen coordinates
-            const canvasWidth = rect.width;
-            const canvasHeight = rect.height;
-
-            // Calculate the position of the label
-            let labelX, labelY;
-
-            if (layout === 'horizontal') {
-                // For horizontal layout, center the label in each section
-                labelX = rect.left + (section.x / canvas.width * canvasWidth) + (section.width / canvas.width * canvasWidth / 2) - (elem.offsetWidth / 2);
-                labelY = rect.top + 10; // Keep at the top
-            } else { // vertical
-                // For vertical layout, position at the top-left of each section
-                labelX = rect.left + (section.x / canvas.width * canvasWidth) + 10;
-                labelY = rect.top + (section.y / canvas.height * canvasHeight) + 10;
-            }
-
-            // Apply the position
-            elem.style.left = `${labelX}px`;
-            elem.style.top = `${labelY}px`;
-        });
     }
 
     function drawScene() {
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        gl.useProgram(program);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-        gl.enableVertexAttribArray(texCoordLocation);
-        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-        updateTexture();
-
         const type = parseInt(document.getElementById('type').value);
         const correction = parseFloat(document.getElementById('correction').value);
         const mirror = document.getElementById('mirror').checked;
         const isShowAll = type === 3;
 
-        gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
-        gl.uniform1f(gl.getUniformLocation(program, 'colour_blindness_correction'), correction);
+        // Toggle between single and multi view modes
+        toggleViewMode(isShowAll);
 
-        // Set up position buffer based on mirror setting
+        // Create position data based on mirror setting
         const positionData = mirror ?
             new Float32Array([
                 1, -1,
@@ -407,174 +449,76 @@
                 1, 1,
             ]);
 
+        if (isShowAll) {
+            // Multi-view mode: render to each of the three canvases
+
+            // Render Protanopia (first canvas)
+            renderToCanvas(protanopiaGl, programs[0], positionBuffers[0], texCoordBuffers[0], 
+                          positionLocations[0], texCoordLocations[0], textures[0], 
+                          positionData, 0, correction);
+
+            // Render Deuteranopia (second canvas)
+            renderToCanvas(deuteranopiaGl, programs[1], positionBuffers[1], texCoordBuffers[1], 
+                          positionLocations[1], texCoordLocations[1], textures[1], 
+                          positionData, 1, correction);
+
+            // Render Tritanopia (third canvas)
+            renderToCanvas(tritanopiaGl, programs[2], positionBuffers[2], texCoordBuffers[2], 
+                          positionLocations[2], texCoordLocations[2], textures[2], 
+                          positionData, 2, correction);
+        } else {
+            // Single-view mode: render to the main canvas
+            renderToCanvas(singleGl, programs[3], positionBuffers[3], texCoordBuffers[3], 
+                          positionLocations[3], texCoordLocations[3], textures[3], 
+                          positionData, type, correction);
+        }
+
+        requestAnimationFrame(drawScene);
+    }
+
+    // Helper function to render to a specific canvas
+    function renderToCanvas(gl, program, positionBuffer, texCoordBuffer, positionLocation, 
+                           texCoordLocation, texture, positionData, type, correction) {
+        if (!gl) return;
+
+        // Ensure the viewport matches the canvas's display size
+        // This helps maintain aspect ratio when the canvas is resized by CSS
+        const displayWidth = gl.canvas.clientWidth;
+        const displayHeight = gl.canvas.clientHeight;
+
+        // Only resize if the canvas display size doesn't match the canvas drawing buffer size
+        if (gl.canvas.width !== displayWidth || gl.canvas.height !== displayHeight) {
+            // Adjust the viewport to match the display size
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        } else {
+            gl.viewport(0, 0, displayWidth, displayHeight);
+        }
+
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(program);
+
+        // Set up position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, positionData, gl.STATIC_DRAW);
         gl.enableVertexAttribArray(positionLocation);
         gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-        if (isShowAll) {
-            // Show all three types side by side
-            const canvasWidth = gl.canvas.width;
-            const canvasHeight = gl.canvas.height;
+        // Set up texture coordinates
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.enableVertexAttribArray(texCoordLocation);
+        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
-            // Get the video aspect ratio from the video track settings
-            let videoAspectRatio = 16/9; // Default fallback
-            if (currentStream) {
-                const videoTrack = currentStream.getVideoTracks()[0];
-                if (videoTrack) {
-                    const settings = videoTrack.getSettings();
-                    videoAspectRatio = settings.width / settings.height;
-                    console.log(`Using video aspect ratio for sections: ${videoAspectRatio.toFixed(5)}`);
-                }
-            }
+        // Update texture with video frame
+        updateTexture(gl, texture);
 
-            // Calculate the width of each section based on the aspect ratio and orientation
-            const canvasAspectRatio = canvasWidth / canvasHeight;
-            let sectionWidth, sectionHeight;
-            let layout;
+        // Set uniforms
+        gl.uniform1i(gl.getUniformLocation(program, 'tex'), 0);
+        gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), type);
+        gl.uniform1f(gl.getUniformLocation(program, 'colour_blindness_correction'), correction);
 
-            // Array to store section positions for label positioning
-            const sectionPositions = [];
-
-            // Determine layout based on orientation, aspect ratio, and screen size
-            const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-            const isVerySmallScreen = Math.min(canvasWidth, canvasHeight) < 400;
-
-            // On very small screens, choose the layout that maximizes video size
-            // For wider screens, use horizontal layout; for taller screens, use vertical layout
-            if ((isLandscape && canvasAspectRatio >= 1.5) ||
-                (isVerySmallScreen && canvasWidth > canvasHeight)) {
-                // Landscape orientation with sufficient width: divide horizontally
-                layout = 'horizontal';
-
-                // Calculate section dimensions that preserve video aspect ratio
-                // Each section should have the same aspect ratio as the video
-                const totalWidth = canvasWidth;
-                const availableHeight = canvasHeight;
-
-                // Use more of the available width (up to 99% on very small screens)
-                // Use smaller spacing on small screens
-                const isSmallScreen = totalWidth < 600;
-                const isVerySmallScreen = totalWidth < 400;
-
-                // Adjust spacing based on screen size: 0.5% for very small, 1% for small, 2% for normal
-                const spacingPercentage = isVerySmallScreen ? 0.005 : (isSmallScreen ? 0.01 : 0.02);
-                const sectionSpacing = Math.max(1, Math.floor(totalWidth * spacingPercentage)); // Ensure at least 1px spacing
-
-                // For very small screens, use even more of the available space
-                const usableWidth = totalWidth - (sectionSpacing * 2); // Account for 2 spaces between 3 sections
-                const individualWidth = Math.floor(usableWidth / 3);
-
-                // Calculate the width of each section
-                sectionWidth = individualWidth;
-
-                // Calculate the height that maintains the video aspect ratio
-                sectionHeight = Math.floor(sectionWidth / videoAspectRatio);
-
-                // If calculated height is too tall, adjust both dimensions
-                if (sectionHeight > availableHeight) {
-                    sectionHeight = availableHeight;
-                    sectionWidth = Math.floor(sectionHeight * videoAspectRatio);
-                }
-
-                // Calculate vertical centering offset
-                const yOffset = Math.floor((availableHeight - sectionHeight) / 2);
-
-                console.log(`Horizontal layout: section size ${sectionWidth}x${sectionHeight}, aspect ratio: ${(sectionWidth/sectionHeight).toFixed(5)}`);
-
-                // Draw Protanopia (left section)
-                const leftX = sectionSpacing;
-                gl.viewport(leftX, yOffset, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 0);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: leftX, y: yOffset, width: sectionWidth, height: sectionHeight });
-
-                // Draw Deuteranopia (middle section)
-                const middleX = leftX + sectionWidth + sectionSpacing;
-                gl.viewport(middleX, yOffset, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 1);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: middleX, y: yOffset, width: sectionWidth, height: sectionHeight });
-
-                // Draw Tritanopia (right section)
-                const rightX = middleX + sectionWidth + sectionSpacing;
-                gl.viewport(rightX, yOffset, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 2);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: rightX, y: yOffset, width: sectionWidth, height: sectionHeight });
-            } else {
-                // Narrow screen: stack vertically
-                layout = 'vertical';
-
-                // Calculate section dimensions that preserve video aspect ratio
-                const availableWidth = canvasWidth;
-                const totalHeight = canvasHeight;
-
-                // Use more of the available height (up to 99% on very small screens)
-                // Use smaller spacing on small screens
-                const isSmallScreen = totalHeight < 600;
-                const isVerySmallScreen = totalHeight < 400;
-
-                // Adjust spacing based on screen size: 0.5% for very small, 1% for small, 2% for normal
-                const spacingPercentage = isVerySmallScreen ? 0.005 : (isSmallScreen ? 0.01 : 0.02);
-                const sectionSpacing = Math.max(1, Math.floor(totalHeight * spacingPercentage)); // Ensure at least 1px spacing
-
-                // For very small screens, use even more of the available space
-                const usableHeight = totalHeight - (sectionSpacing * 2); // Account for 2 spaces between 3 sections
-                const individualHeight = Math.floor(usableHeight / 3);
-
-                // Calculate the height of each section
-                sectionHeight = individualHeight;
-
-                // Calculate the width that maintains the video aspect ratio
-                sectionWidth = Math.floor(sectionHeight * videoAspectRatio);
-
-                // If calculated width is too wide, adjust both dimensions
-                if (sectionWidth > availableWidth) {
-                    sectionWidth = availableWidth;
-                    sectionHeight = Math.floor(sectionWidth / videoAspectRatio);
-                }
-
-                // Calculate horizontal centering offset
-                const xOffset = Math.floor((availableWidth - sectionWidth) / 2);
-
-                console.log(`Vertical layout: section size ${sectionWidth}x${sectionHeight}, aspect ratio: ${(sectionWidth/sectionHeight).toFixed(5)}`);
-
-                // Draw Protanopia (top section)
-                const topY = totalHeight - sectionHeight - sectionSpacing;
-                gl.viewport(xOffset, topY, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 0);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: xOffset, y: topY, width: sectionWidth, height: sectionHeight });
-
-                // Draw Deuteranopia (middle section)
-                const middleY = topY - sectionHeight - sectionSpacing;
-                gl.viewport(xOffset, middleY, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 1);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: xOffset, y: middleY, width: sectionWidth, height: sectionHeight });
-
-                // Draw Tritanopia (bottom section)
-                const bottomY = middleY - sectionHeight - sectionSpacing;
-                gl.viewport(xOffset, bottomY, sectionWidth, sectionHeight);
-                gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), 2);
-                gl.drawArrays(gl.TRIANGLES, 0, 6);
-                sectionPositions.push({ x: xOffset, y: bottomY, width: sectionWidth, height: sectionHeight });
-            }
-
-            // Update section labels with precise positioning information
-            updateSectionLabels(true, layout, sectionPositions);
-        } else {
-            // Show single type (full screen)
-            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-            gl.uniform1i(gl.getUniformLocation(program, 'colour_blindness_type'), type);
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-            // Remove any section labels
-            updateSectionLabels(false);
-        }
-
-        requestAnimationFrame(drawScene);
+        // Draw
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     document.getElementById('camera').addEventListener('change', async (event) => {
@@ -588,30 +532,12 @@
         video.play();
     });
 
-    // Add event listener for type dropdown to update section labels
+    // Add event listener for type dropdown to toggle view mode
     document.getElementById('type').addEventListener('change', () => {
-        // When type changes, update the section labels
         const type = parseInt(document.getElementById('type').value);
 
-        if (type === 3) {
-            // Use the same layout logic as in adjustCanvasSize
-            const container = document.getElementById('canvas-container');
-            const containerWidth = container.clientWidth;
-            const containerHeight = container.clientHeight;
-            const containerAspectRatio = containerWidth / containerHeight;
-            const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-            const isVerySmallScreen = Math.min(containerWidth, containerHeight) < 400;
-
-            // Use the same layout determination logic as in drawScene
-            const layout = (isLandscape && containerAspectRatio >= 1.5) ||
-                          (isVerySmallScreen && containerWidth > containerHeight) ? 'horizontal' : 'vertical';
-
-            // Let drawScene handle the actual label positioning on the next frame
-            // This will trigger a redraw which will position the labels correctly
-            updateSectionLabels(true, layout, null);
-        } else {
-            updateSectionLabels(false);
-        }
+        // Toggle between single and multi view modes
+        toggleViewMode(type === 3);
     });
 
     video.addEventListener('canplay', () => {
@@ -619,73 +545,110 @@
         requestAnimationFrame(drawScene);
     });
 
-    // Function to adjust canvas size and maintain aspect ratio
-    function adjustCanvasSize() {
-        if (!currentStream) return;
+    // Handle window resize to ensure canvases are properly sized
+    window.addEventListener('resize', () => {
+        // Make sure all canvases have the correct internal dimensions
+        if (currentStream) {
+            const videoTrack = currentStream.getVideoTracks()[0];
+            if (videoTrack) {
+                const settings = videoTrack.getSettings();
+                const videoAspectRatio = settings.width / settings.height;
 
-        const videoTrack = currentStream.getVideoTracks()[0];
-        if (!videoTrack) return;
+                const canvases = [
+                    document.getElementById('canvas'),
+                    document.getElementById('canvas-protanopia'),
+                    document.getElementById('canvas-deuteranopia'),
+                    document.getElementById('canvas-tritanopia')
+                ];
 
-        const settings = videoTrack.getSettings();
-        // Get the exact video dimensions and aspect ratio
-        const videoWidth = settings.width;
-        const videoHeight = settings.height;
-        const videoAspectRatio = videoWidth / videoHeight;
+                canvases.forEach(canvas => {
+                    if (canvas) {
+                        // Maintain the internal dimensions to match the video source
+                        if (canvas.width !== settings.width || canvas.height !== settings.height) {
+                            canvas.width = settings.width;
+                            canvas.height = settings.height;
+                        }
 
-        console.log(`Adjusting canvas size to match video aspect ratio: ${videoAspectRatio.toFixed(5)}`);
-        console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
+                        // Get the container dimensions
+                        const container = canvas.parentElement;
+                        const containerWidth = container.clientWidth;
+                        const containerHeight = container.clientHeight;
+                        const containerAspectRatio = containerWidth / containerHeight;
 
-        const canvas = document.getElementById('canvas');
-        const container = document.getElementById('canvas-container');
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-        const containerAspectRatio = containerWidth / containerHeight;
+                        // Calculate the optimal display size that fits within the container
+                        // while maintaining the video's aspect ratio
+                        let displayWidth, displayHeight;
 
-        // Calculate dimensions that preserve aspect ratio exactly
-        let canvasWidth, canvasHeight;
+                        if (containerAspectRatio > videoAspectRatio) {
+                            // Container is wider than video
+                            displayHeight = Math.min(containerHeight, settings.height);
+                            displayWidth = displayHeight * videoAspectRatio;
+                        } else {
+                            // Container is taller than video
+                            displayWidth = Math.min(containerWidth, settings.width);
+                            displayHeight = displayWidth / videoAspectRatio;
+                        }
 
-        if (containerAspectRatio > videoAspectRatio) {
-            // Container is wider than video
-            canvasHeight = Math.min(containerHeight, window.innerHeight);
-            // Calculate width to exactly match the video aspect ratio
-            canvasWidth = Math.round(canvasHeight * videoAspectRatio);
-        } else {
-            // Container is taller than video
-            canvasWidth = Math.min(containerWidth, window.innerWidth);
-            // Calculate height to exactly match the video aspect ratio
-            canvasHeight = Math.round(canvasWidth / videoAspectRatio);
+                        // Apply the calculated dimensions via CSS
+                        canvas.style.width = `${displayWidth}px`;
+                        canvas.style.height = `${displayHeight}px`;
+                    }
+                });
+            }
         }
+    });
 
-        console.log(`Calculated canvas dimensions: ${canvasWidth}x${canvasHeight}, aspect ratio: ${(canvasWidth/canvasHeight).toFixed(5)}`);
-
-        // Apply the calculated dimensions
-        canvas.style.width = `${canvasWidth}px`;
-        canvas.style.height = `${canvasHeight}px`;
-
-        // Center the canvas in the container
-        canvas.style.position = 'absolute';
-        canvas.style.left = '50%';
-        canvas.style.top = '50%';
-        canvas.style.transform = 'translate(-50%, -50%)';
-
-        // Update section labels if in "Show All" mode
-        const type = parseInt(document.getElementById('type').value);
-        if (type === 3) {
-            // Determine layout based on orientation and aspect ratio
-            const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-            const layout = isLandscape && containerAspectRatio >= 1.5 ? 'horizontal' : 'vertical';
-            // Let drawScene handle the actual label positioning on the next frame
-            updateSectionLabels(true, layout, null);
-        }
-    }
-
-    // Handle window resize to maintain canvas aspect ratio and update labels
-    window.addEventListener('resize', adjustCanvasSize);
-
-    // Handle orientation change explicitly
+    // Handle orientation change
     window.addEventListener('orientationchange', () => {
         // Small delay to allow the browser to complete the orientation change
-        setTimeout(adjustCanvasSize, 100);
+        setTimeout(() => {
+            // The responsive layout is handled by Tailwind CSS
+            console.log('Orientation changed, layout adjusted by Tailwind CSS');
+
+            // Trigger the resize handler to ensure proper canvas sizing
+            if (currentStream) {
+                const videoTrack = currentStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    const settings = videoTrack.getSettings();
+                    const videoAspectRatio = settings.width / settings.height;
+
+                    const canvases = [
+                        document.getElementById('canvas'),
+                        document.getElementById('canvas-protanopia'),
+                        document.getElementById('canvas-deuteranopia'),
+                        document.getElementById('canvas-tritanopia')
+                    ];
+
+                    canvases.forEach(canvas => {
+                        if (canvas) {
+                            // Get the container dimensions
+                            const container = canvas.parentElement;
+                            const containerWidth = container.clientWidth;
+                            const containerHeight = container.clientHeight;
+                            const containerAspectRatio = containerWidth / containerHeight;
+
+                            // Calculate the optimal display size that fits within the container
+                            // while maintaining the video's aspect ratio
+                            let displayWidth, displayHeight;
+
+                            if (containerAspectRatio > videoAspectRatio) {
+                                // Container is wider than video
+                                displayHeight = Math.min(containerHeight, settings.height);
+                                displayWidth = displayHeight * videoAspectRatio;
+                            } else {
+                                // Container is taller than video
+                                displayWidth = Math.min(containerWidth, settings.width);
+                                displayHeight = displayWidth / videoAspectRatio;
+                            }
+
+                            // Apply the calculated dimensions via CSS
+                            canvas.style.width = `${displayWidth}px`;
+                            canvas.style.height = `${displayHeight}px`;
+                        }
+                    });
+                }
+            }
+        }, 300); // Increased delay to ensure layout has fully adjusted
     });
 
     getCameras();
