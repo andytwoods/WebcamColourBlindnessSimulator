@@ -42,6 +42,12 @@
         <input type="range" id="correction" min="0" max="1" step="0.01" value="1" class="block mb-4 w-full">
         <label for="camera" class="block text-white mb-2">Camera:</label>
         <select id="camera" class="block mb-4 p-2 rounded"></select>
+        <label for="resolution" class="block text-white mb-2">Resolution:</label>
+        <select id="resolution" class="block mb-4 p-2 rounded">
+            <option value="640x480">640x480</option>
+            <option value="1280x720" selected>1280x720 (HD)</option>
+            <option value="1920x1080">1920x1080 (Full HD)</option>
+        </select>
         <label class="block text-white mb-2">
             <input type="checkbox" id="mirror" class="mr-2"> Mirror Image
         </label>
@@ -87,25 +93,30 @@
 
                 vec3 simulated_LMS;
                 if (colour_blindness_type == 0) {
-                    // Protanopia simulation
+                    // Protanopia simulation (L cone deficiency)
+                    // Based on Brettel et al. (1997) and Viénot et al. (1999)
+                    // Modified to prevent extreme values that cause blockiness
                     simulated_LMS = vec3(
-                        0.0,
+                        0.0 * LMS.r + 1.05118294 * LMS.g - 0.05116099 * LMS.b,
                         LMS.g,
                         LMS.b
                     );
                 } else if (colour_blindness_type == 1) {
-                    // Deuteranopia simulation
+                    // Deuteranopia simulation (M cone deficiency)
+                    // Based on Brettel et al. (1997) and Viénot et al. (1999)
+                    // Modified to prevent extreme values that cause blockiness
                     simulated_LMS = vec3(
                         LMS.r,
-                        0.0,
+                        0.494207 * LMS.r + 0.503174 * LMS.g + 0.000019 * LMS.b,
                         LMS.b
                     );
                 } else if (colour_blindness_type == 2) {
-                    // Tritanopia simulation
+                    // Tritanopia simulation (S cone deficiency)
+                    // Based on Brettel et al. (1997) and Viénot et al. (1999)
                     simulated_LMS = vec3(
                         LMS.r,
                         LMS.g,
-                        0.0
+                        -0.01224 * LMS.r + 0.07203 * LMS.g
                     );
                 } else {
                     simulated_LMS = LMS;
@@ -116,6 +127,9 @@
 
                 // Transform the color back from LMS to RGB
                 vec3 simulated_RGB = LMS_to_RGB * simulated_LMS;
+
+                // Clamp values to prevent artifacts
+                simulated_RGB = clamp(simulated_RGB, 0.0, 1.0);
 
                 gl_FragColor = vec4(simulated_RGB, color.a);
             }
@@ -193,12 +207,39 @@
         if (currentStream) {
             currentStream.getTracks().forEach(track => track.stop());
         }
+
+        // Get the selected resolution
+        const resolutionValue = document.getElementById('resolution').value;
+        const [width, height] = resolutionValue.split('x').map(Number);
+
         const constraints = {
-            video: {deviceId: deviceId ? {exact: deviceId} : undefined}
+            video: {
+                deviceId: deviceId ? {exact: deviceId} : undefined,
+                width: { ideal: width },
+                height: { ideal: height }
+            }
         };
-        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = currentStream;
-        return video;
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = currentStream;
+
+            // Update canvas size to match video dimensions
+            const videoTrack = currentStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            console.log(`Actual resolution: ${settings.width}x${settings.height}`);
+
+            // Resize canvas to maintain aspect ratio
+            const canvas = document.getElementById('canvas');
+            canvas.width = settings.width;
+            canvas.height = settings.height;
+
+            return video;
+        } catch (error) {
+            console.error("Error accessing webcam:", error);
+            alert("Error accessing webcam with the selected resolution. Please try a different resolution.");
+            return null;
+        }
     }
 
     async function getCameras() {
@@ -275,9 +316,42 @@
         video.play();
     });
 
+    document.getElementById('resolution').addEventListener('change', async () => {
+        const cameraSelect = document.getElementById('camera');
+        await setupVideo(cameraSelect.value);
+        video.play();
+    });
+
     video.addEventListener('canplay', () => {
         video.play();
         requestAnimationFrame(drawScene);
+    });
+
+    // Handle window resize to maintain canvas aspect ratio
+    window.addEventListener('resize', () => {
+        if (currentStream) {
+            const videoTrack = currentStream.getVideoTracks()[0];
+            if (videoTrack) {
+                const settings = videoTrack.getSettings();
+                const aspectRatio = settings.width / settings.height;
+
+                // Adjust canvas size while maintaining aspect ratio
+                const canvas = document.getElementById('canvas');
+                const container = document.getElementById('canvas-container');
+                const containerWidth = container.clientWidth;
+                const containerHeight = container.clientHeight;
+
+                if (containerWidth / containerHeight > aspectRatio) {
+                    // Container is wider than video
+                    canvas.style.height = '100%';
+                    canvas.style.width = 'auto';
+                } else {
+                    // Container is taller than video
+                    canvas.style.width = '100%';
+                    canvas.style.height = 'auto';
+                }
+            }
+        }
     });
 
     getCameras();
